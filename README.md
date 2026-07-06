@@ -21,16 +21,16 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Europe/Copenhagen
-      - PORT=8089
+      - PORT=8070
     volumes:
       - ./config:/config
     ports:
-      - "8089:8089"
+      - "8070:8070"
     restart: unless-stopped
 ```
 
 1. `docker compose up -d`
-2. Open `http://<host>:8089` and fill in the settings form: Seerr / Radarr /
+2. Open `http://<host>:8070` and fill in the settings form: Seerr / Radarr /
    Sonarr / Bazarr URLs + API keys, your main languages, and any optional
    keyword shortcuts.
 3. Copy the generated **Webhook URL** and **Webhook secret** from the bottom

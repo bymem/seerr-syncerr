@@ -6,9 +6,9 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Europe/Copenhagen
-      - PORT=8089
+      - PORT=8070
     volumes:
       - ./config:/config
     ports:
-      - "8089:8089"
+      - "8070:8070"
     restart: unless-stopped
