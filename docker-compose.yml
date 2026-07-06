@@ -1,6 +1,6 @@
 services:
   seerr-syncerr:
-    build: .
+    image: ghcr.io/bymem/seerr-syncerr:latest
     container_name: seerr-syncerr
     environment:
       - PUID=1000

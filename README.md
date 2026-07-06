@@ -15,7 +15,7 @@ composer dependency, no YAML — everything the app needs lives in the web UI.
 ```yaml
 services:
   seerr-syncerr:
-    image: ghcr.io/<your-github-username>/seerr-syncerr:latest
+    image: ghcr.io/bymem/seerr-syncerr:latest
     container_name: seerr-syncerr
     environment:
       - PUID=1000
@@ -28,9 +28,6 @@ services:
       - "8089:8089"
     restart: unless-stopped
 ```
-
-Until an image is published, build locally instead — see `docker-compose.yml`
-in this repo (`build: .`).
 
 1. `docker compose up -d`
 2. Open `http://<host>:8089` and fill in the settings form: Seerr / Radarr /
