@@ -86,7 +86,7 @@ class SettingsController
     private function buildWebhookUrl(): string
     {
         $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost:' . (getenv('PORT') ?: '8089');
+        $host = $_SERVER['HTTP_HOST'] ?? 'localhost:' . (getenv('PORT') ?: '8070');
 
         return "{$scheme}://{$host}/webhook";
     }

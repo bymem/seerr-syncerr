@@ -66,13 +66,13 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Europe/Copenhagen
-      - PORT=8089
+      - PORT=8070
       - WEBUI_USERNAME=admin
       - WEBUI_PASSWORD=changeme # required — see §4.2
     volumes:
       - ./config:/config
     ports:
-      - "8089:8089"
+      - "8070:8070"
     restart: unless-stopped
 ```
 
@@ -119,7 +119,7 @@ POSTing to `/save`, persisted via `Config::save()`.
 | **Sync keywords** (repeating list) | optional shortcut: words like "out of sync"/"timing" that mean *realign this file*, not *replace it* — see §4.1 |
 | **Auto-translate tool** (dropdown + conditional fields) | which adapter answers "is it callable" for §8's reset flow |
 | **Externally-translated filename pattern** (single regex field) | always shown regardless of adapter — you fill this in from what your tool actually names its output |
-| **Webhook URL** (read-only, shown to copy into Seerr) | `http://<host>:8089/webhook` |
+| **Webhook URL** (read-only, shown to copy into Seerr) | `http://<host>:8070/webhook` |
 | **Webhook secret** (read-only, shown to copy into Seerr) | goes in Seerr's Authorization Header field |
 
 ### 4.1 Main languages, keyword matching, and sync vs. replace
@@ -730,7 +730,7 @@ way.
   URLs+keys, language/sync keywords) lives in the web UI, not env vars — worth
   saying explicitly since every other *arr app trains people to expect a mix
   of both.
-- First-run instructions: open `http://<host>:8089`, fill in the settings
+- First-run instructions: open `http://<host>:8070`, fill in the settings
   form, copy the generated webhook URL + secret into Seerr.
 
 ### Not building (deliberately, for now)

@@ -3,7 +3,7 @@ set -e
 
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
-PORT="${PORT:-8089}"
+PORT="${PORT:-8070}"
 TZ="${TZ:-UTC}"
 
 # The settings UI exposes every configured service's API key plus the

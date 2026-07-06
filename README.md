@@ -52,7 +52,7 @@ services:
 | `PUID` | User id to run as inside the container | `1000` |
 | `PGID` | Group id to run as inside the container | `1000` |
 | `TZ` | Timezone | `UTC` |
-| `PORT` | Port the web server listens on | `8089` |
+| `PORT` | Port the web server listens on | `8070` |
 | `WEBUI_PASSWORD` | **Required.** Password for the settings UI (HTTP Basic Auth) — the container will not start without it. | *(none)* |
 | `WEBUI_USERNAME` | Username for the settings UI | `admin` |
 
@@ -92,5 +92,5 @@ See `SPEC.md` in this repo for the full design.
 No composer install needed — `src/` is autoloaded directly. Run locally with:
 
 ```bash
-CONFIG_PATH=./config/config.json WEBUI_PASSWORD=dev php -S 0.0.0.0:8089 -t public public/index.php
+CONFIG_PATH=./config/config.json WEBUI_PASSWORD=dev php -S 0.0.0.0:8070 -t public public/index.php
 ```
