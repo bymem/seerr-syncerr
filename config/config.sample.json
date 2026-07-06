@@ -1,0 +1,33 @@
+{
+    "seerr": {
+        "url": "http://seerr:5055",
+        "api_key": ""
+    },
+    "radarr": {
+        "url": "http://radarr:7878",
+        "api_key": ""
+    },
+    "sonarr": {
+        "url": "http://sonarr:8989",
+        "api_key": ""
+    },
+    "bazarr": {
+        "url": "http://bazarr:6767",
+        "api_key": ""
+    },
+    "subtitles": {
+        "main_languages": ["en"],
+        "language_keywords": {},
+        "sync_keywords": ["out of sync", "timing", "desync"]
+    },
+    "translator": {
+        "adapter": "none",
+        "tool_url": "",
+        "custom_callable": false,
+        "filename_pattern": "",
+        "source_language": "en"
+    },
+    "webhook": {
+        "secret": "replace-me-on-first-boot"
+    }
+}
