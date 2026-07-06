@@ -2,6 +2,7 @@
 /** @var \SeerrSyncerr\Config $config */
 /** @var string $webhookUrl */
 /** @var bool $saved */
+/** @var string $csrfToken */
 
 $mainLanguages = (array) $config->get('subtitles.main_languages', []);
 $languageKeywords = (array) $config->get('subtitles.language_keywords', []);
@@ -39,17 +40,24 @@ function ss_e($value): string
   .row input { flex: 1; }
   .row button, .add-btn, .save-btn { cursor: pointer; }
   .remove-btn { background: #442222; color: #fff; border: 1px solid #663333; border-radius: 4px; padding: .35rem .6rem; }
+  .move-btn { background: #2a2c33; color: #fff; border: 1px solid #444; border-radius: 4px; padding: .35rem .55rem; line-height: 1; }
   .add-btn { background: #223344; color: #fff; border: 1px solid #335577; border-radius: 4px; padding: .35rem .8rem; margin-top: .3rem; }
   .save-btn { background: #2a5c3a; color: #fff; border: none; border-radius: 4px; padding: .7rem 1.4rem; font-size: 1rem; margin: 1.5rem 0; }
   .readonly-box { background: #101114; border: 1px solid #333; border-radius: 4px; padding: .5rem .6rem; font-family: monospace; word-break: break-all; }
   .hint { color: #888; font-size: .82rem; margin-top: .2rem; }
   .banner { background: #1f3d27; border: 1px solid #2a5c3a; padding: .6rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+  .topbar { display: flex; justify-content: space-between; align-items: baseline; }
+  .topbar a { color: #9ab; text-decoration: none; font-size: .9rem; }
+  .topbar a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
 
-<h1>SeerrSyncerr</h1>
+<div class="topbar">
+  <h1>SeerrSyncerr</h1>
+  <a href="/logout">Sign out</a>
+</div>
 <p class="hint">Subtitle issue bridge for Seerr + Bazarr.</p>
 
 <?php if ($saved): ?>
@@ -57,6 +65,7 @@ function ss_e($value): string
 <?php endif; ?>
 
 <form method="post" action="/save">
+  <input type="hidden" name="csrf_token" value="<?= ss_e($csrfToken) ?>">
 
   <h2>Seerr</h2>
   <fieldset>
@@ -95,11 +104,29 @@ function ss_e($value): string
   </fieldset>
 
   <h2>Main languages</h2>
-  <p class="hint">Fixed whenever a report's comment doesn't match a language keyword below. Order matters.</p>
+  <p class="hint">
+    Every language listed here gets fixed whenever a report's comment doesn't
+    match one of the language keywords below — this isn't a fallback chain
+    where only the first one applies, all of them are attempted. The order
+    just controls the sequence they're processed and reported in, so use the
+    ↑/↓ buttons to arrange them however you'd like to read the summary
+    comment Seerr gets back.
+  </p>
+  <p class="hint">
+    Type the exact two-letter code <strong>Bazarr</strong> uses for that
+    language (e.g. <code>en</code>, <code>da</code>, <code>de</code>,
+    <code>fr</code>, <code>es</code>) — check Bazarr's own
+    <strong>Settings → Languages</strong> page for the codes your profiles
+    are actually configured with. Whatever you type here is passed straight
+    to Bazarr's API, so it needs to match Bazarr's codes specifically, not
+    Seerr's language names or a Radarr/Sonarr profile label.
+  </p>
   <fieldset>
     <div id="main-languages-list">
       <?php foreach ($mainLanguages as $lang): ?>
       <div class="row">
+        <button type="button" class="move-btn" onclick="ssMoveRow(this, -1)" title="Move up">↑</button>
+        <button type="button" class="move-btn" onclick="ssMoveRow(this, 1)" title="Move down">↓</button>
         <input type="text" name="main_languages[]" value="<?= ss_e($lang) ?>" placeholder="e.g. da">
         <button type="button" class="remove-btn" onclick="this.parentElement.remove()">Remove</button>
       </div>
@@ -191,8 +218,23 @@ function ssAddRow(containerId, html) {
   container.appendChild(wrapper.firstElementChild);
 }
 
+function ssMoveRow(button, direction) {
+  const row = button.closest('.row');
+  const sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
+  if (!sibling) {
+    return;
+  }
+  if (direction < 0) {
+    row.parentElement.insertBefore(row, sibling);
+  } else {
+    row.parentElement.insertBefore(sibling, row);
+  }
+}
+
 function ssMainLanguageRow() {
   return '<div class="row">'
+    + '<button type="button" class="move-btn" onclick="ssMoveRow(this, -1)" title="Move up">↑</button>'
+    + '<button type="button" class="move-btn" onclick="ssMoveRow(this, 1)" title="Move down">↓</button>'
     + '<input type="text" name="main_languages[]" placeholder="e.g. en">'
     + '<button type="button" class="remove-btn" onclick="this.parentElement.remove()">Remove</button>'
     + '</div>';

@@ -3,6 +3,7 @@
 namespace SeerrSyncerr\Controllers;
 
 use SeerrSyncerr\Config;
+use SeerrSyncerr\Support\SessionAuth;
 
 class SettingsController
 {
@@ -18,6 +19,7 @@ class SettingsController
         $config = $this->config;
         $webhookUrl = $this->buildWebhookUrl();
         $saved = isset($_GET['saved']);
+        $csrfToken = SessionAuth::csrfToken();
 
         require __DIR__ . '/../../templates/settings.php';
     }

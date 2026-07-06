@@ -18,7 +18,7 @@
     "subtitles": {
         "main_languages": ["en"],
         "language_keywords": {},
-        "sync_keywords": ["out of sync", "timing", "desync"]
+        "sync_keywords": ["out of sync", "desync", "timing", "off by"]
     },
     "translator": {
         "adapter": "none",

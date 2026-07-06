@@ -24,8 +24,8 @@ spl_autoload_register(function (string $class): void {
 use SeerrSyncerr\Config;
 use SeerrSyncerr\Controllers\SettingsController;
 use SeerrSyncerr\Controllers\WebhookController;
-use SeerrSyncerr\Support\BasicAuthGuard;
 use SeerrSyncerr\Support\Logger;
+use SeerrSyncerr\Support\SessionAuth;
 
 $configPath = getenv('CONFIG_PATH') ?: '/config/config.json';
 $config = new Config($configPath);
@@ -45,13 +45,33 @@ if ($path === '/webhook' && $method === 'POST') {
     return;
 }
 
+if ($path === '/login' && $method === 'GET') {
+    if (SessionAuth::isLoggedIn()) {
+        header('Location: /');
+        return;
+    }
+    $error = isset($_GET['error']);
+    require __DIR__ . '/../templates/login.php';
+    return;
+}
+
+if ($path === '/login' && $method === 'POST') {
+    $ok = SessionAuth::attempt((string) ($_POST['username'] ?? ''), (string) ($_POST['password'] ?? ''));
+    header('Location: ' . ($ok ? '/' : '/login?error=1'));
+    return;
+}
+
+if ($path === '/logout') {
+    SessionAuth::logout();
+    header('Location: /login');
+    return;
+}
+
 // The settings UI exposes every configured service's API key and the
-// webhook secret, so it's gated behind HTTP Basic Auth — the webhook route
-// above has its own secret-based auth and is unaffected.
-if (($path === '/' || $path === '/save') && !BasicAuthGuard::verify()) {
-    header('WWW-Authenticate: Basic realm="SeerrSyncerr"');
-    http_response_code(401);
-    echo 'Authentication required';
+// webhook secret, so it's gated behind a login — the webhook route above
+// has its own independent secret-based auth and is unaffected.
+if (($path === '/' || $path === '/save') && !SessionAuth::isLoggedIn()) {
+    header('Location: /login');
     return;
 }
 
@@ -61,6 +81,11 @@ if ($path === '/' && $method === 'GET') {
 }
 
 if ($path === '/save' && $method === 'POST') {
+    if (!SessionAuth::verifyCsrf((string) ($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        echo 'Invalid or expired form — reload the settings page and try again.';
+        return;
+    }
     (new SettingsController($config))->save($_POST);
     return;
 }

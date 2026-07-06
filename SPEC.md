@@ -127,8 +127,14 @@ POSTing to `/save`, persisted via `Config::save()`.
 This replaces a single "default language" field with three UI-managed lists:
 
 - **Main languages** — an ordered list of language codes (e.g. `da`, then `en`).
-  This is what actually gets fixed when a report doesn't tell us anything
-  useful. Managed as add/remove rows in the UI, not a raw JSON edit.
+  *Every* entry gets fixed when a report doesn't match a language keyword
+  below — it's not a fallback chain where only the first applies, the order
+  only controls the sequence languages are processed/reported in. Managed as
+  add/remove rows in the UI (with ↑/↓ reorder buttons, since order is
+  meaningful), not a raw JSON edit. Codes must be whatever Bazarr itself
+  uses (check Bazarr's own Settings → Languages page) — this app passes
+  what's typed here straight to Bazarr's API, so it has to match Bazarr's
+  codes, not Seerr's language names or a Radarr/Sonarr profile label.
 - **Language keywords** — an optional lookup a reporter's comment can match
   against (e.g. `english` → `en`, `eng` → `en`). Entirely optional power-user
   shortcut, also managed as add/remove rows in the UI. Nobody needs to know
@@ -138,6 +144,9 @@ This replaces a single "default language" field with three UI-managed lists:
   language it applies to. overr-syncerr had this exact concept: a subtitle
   can be the right language and even the right file, just drifted out of
   time — re-downloading a "new" one doesn't help, only realigning it does.
+  Prefilled on a fresh install (`"out of sync"`, `"desync"`, `"timing"`,
+  `"off by"`) so this works out of the box rather than doing nothing until
+  the user thinks to add entries themselves — still fully editable/removable.
 
 These are genuinely two different questions the comment can answer — *which
 language* and *what kind of problem* — so they're resolved by two separate
@@ -149,32 +158,48 @@ See §7 for exactly how these lists get used together.
 
 The settings UI is the one page in this app that's actually dangerous to
 leave open on a network: it shows (and lets you resave) the Seerr/Radarr/
-Sonarr/Bazarr API keys and the webhook secret. Rather than a login form with
-its own stored credentials — which would itself need to live somewhere
-before the app can enforce it — this is **HTTP Basic Auth backed directly by
-two env vars**:
+Sonarr/Bazarr API keys and the webhook secret. Credentials are **still just
+two env vars** — no user table, no stored password hash, nothing that needs
+to exist before the app can enforce it:
 
 - `WEBUI_PASSWORD` — **required, no default.** `entrypoint.sh` checks this
   before doing anything else and `exit 1`s with a clear message if it's
   unset/empty, so the container simply never comes up unauthenticated.
 - `WEBUI_USERNAME` — optional, defaults to `admin`.
 
-`Support\BasicAuthGuard::verify()` reads `$_SERVER['PHP_AUTH_USER']`/
-`PHP_AUTH_PW'` (populated automatically by PHP's built-in `cli-server` SAPI
-for Basic Auth — no manual header parsing needed) and compares both against
-the env vars via `hash_equals()`. `public/index.php` calls it for `/` and
-`/save` only:
+Login itself is a proper **HTML form + session cookie**, not HTTP Basic
+Auth — nicer UX (a real login page instead of the browser's native prompt,
+an explicit sign-out) at the cost of needing CSRF protection, since a
+cookie is sent automatically by the browser on any request whereas a Basic
+Auth header is not. `Support\SessionAuth` covers both halves:
 
+- `attempt(username, password)` — checks both via `hash_equals()` against
+  the env vars; on success, `session_regenerate_id(true)` then flags the
+  PHP session authenticated.
+- `csrfToken()` / `verifyCsrf()` — a random token stored in the session,
+  rendered as a hidden field on the settings form (`templates/settings.php`)
+  and checked on every `POST /save`.
+
+Routes in `public/index.php`:
+
+- `GET /login` — the login page (`templates/login.php`); redirects to `/` if
+  already authenticated.
+- `POST /login` — checks credentials via `SessionAuth::attempt()`; redirects
+  to `/` on success, back to `/login?error=1` on failure.
+- `GET|POST /logout` — destroys the session, redirects to `/login`.
+- `GET /` and `POST /save` — require `SessionAuth::isLoggedIn()`, redirect to
+  `/login` otherwise; `/save` additionally requires a valid CSRF token,
+  rejecting with `403` if it's missing or wrong.
 - **`/webhook` is untouched** — Seerr authenticates to it with its own
   independent secret (§5), checked separately in `WebhookController`, not
-  with a username/password.
+  with a username/password/session.
 - **`/healthz` is untouched** — needs to stay reachable for the Dockerfile's
   `HEALTHCHECK` without credentials.
 
 If `WEBUI_PASSWORD` is somehow empty at request time (e.g. running
 `public/index.php` directly with `php -S` outside the container, without
-setting the env var) `BasicAuthGuard` fails closed — every request to `/`
-or `/save` gets a 401, rather than silently allowing access.
+setting the env var), `SessionAuth::attempt()` fails closed — login can
+never succeed, rather than silently allowing access.
 
 ---
 
@@ -278,7 +303,7 @@ seerr-syncerr/
 │   │   ├── LanguageResolver.php  # comment -> [language codes] to fix, see §4.1/§7
 │   │   ├── ActionResolver.php    # comment -> "sync" or "replace", see §4.1/§7.1
 │   │   ├── ExternalTranslationDetector.php  # was this file translated outside Bazarr?
-│   │   └── BasicAuthGuard.php    # HTTP Basic Auth for the settings UI, see §4.2
+│   │   └── SessionAuth.php       # login/session/CSRF for the settings UI, see §4.2
 │   ├── TranslatorAdapters/
 │   │   ├── ExternalTranslatorAdapter.php    # interface: isCallable()/triggerRetranslate(), see §8
 │   │   ├── BazarrAiTranslateAdapter.php
@@ -296,6 +321,7 @@ seerr-syncerr/
 │       ├── WebhookController.php     # POST /webhook
 │       └── SettingsController.php    # GET/POST / (web UI)
 └── templates/
+    ├── login.php             # login form, see §4.2
     └── settings.php          # plain PHP+HTML view, no framework
 ```
 
@@ -332,12 +358,23 @@ seerr-syncerr/
 
 ### `Config`
 - `get(string $dotKey, $default = null)` — dot-notation read (`get('seerr.url')`)
-- `save(array $data): void` — merges onto defaults, persists to `/config/config.json`
+- `save(array $data): void` — merges onto the current config, persists to `/config/config.json`
 - `all(): array`
 - Schema now includes `subtitles.main_languages` (ordered array of codes),
   `subtitles.language_keywords` (object, keyword → code), and
   `subtitles.sync_keywords` (array of phrases) alongside the service URLs/keys
   — all sections editable from the same settings form.
+- **Merge is one level deep, not `array_replace_recursive()`.** Every section
+  (`seerr`, `subtitles`, `translator`, ...) is exactly two levels deep, and
+  every caller always submits a section's leaf fields as a complete set — so
+  `mergeSections()` replaces each leaf value wholesale (`array_replace()` at
+  depth 1) rather than recursing further. This matters specifically for list/
+  map leaves like `main_languages` or `language_keywords`: with a *recursive*
+  merge, submitting a shorter list after removing a row would merge by
+  index/key against the previous (longer) value and the removed entry would
+  silently survive, since there'd be nothing at that index/key to overwrite
+  it with. Applies equally to filling in defaults for a config.json from an
+  older version (`mergeDefaults()`) and to `save()` itself.
 
 ### `Support\HttpClient`
 - `get(string $path, array $query = []): array{status:int, body:?array}`

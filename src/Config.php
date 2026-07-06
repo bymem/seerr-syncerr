@@ -41,7 +41,11 @@ class Config
             'subtitles' => [
                 'main_languages' => [],
                 'language_keywords' => [],
-                'sync_keywords' => [],
+                // Prefilled so a fresh install already recognizes the most
+                // common ways someone describes a desync in plain English,
+                // rather than shipping empty and doing nothing until the
+                // user thinks to add these themselves.
+                'sync_keywords' => ['out of sync', 'desync', 'timing', 'off by'],
             ],
             'translator' => [
                 // none | bazarr_ai_translate | bazarr_auto_translate | ai_subtitle_translator | custom
@@ -85,7 +89,32 @@ class Config
 
     private function mergeDefaults(array $data): array
     {
-        return array_replace_recursive($this->defaults(), $data);
+        return $this->mergeSections($this->defaults(), $data);
+    }
+
+    /**
+     * Every section this config manages (seerr/radarr/.../subtitles/
+     * translator) is exactly two levels deep, and every caller — both this
+     * class filling in defaults, and SettingsController::save() — always
+     * submits a section's leaf fields as a complete set. So merging one
+     * level deep, replacing each leaf value wholesale, is exactly right:
+     * unlike array_replace_recursive(), a leaf that's a list (e.g.
+     * main_languages) or a map (e.g. language_keywords) gets fully replaced
+     * instead of merged index/key-by-key — which matters the moment a user
+     * *removes* an entry, since there'd otherwise be nothing in the new
+     * value to overwrite the removed one with.
+     */
+    private function mergeSections(array $base, array $overrides): array
+    {
+        foreach ($overrides as $key => $value) {
+            if (is_array($value) && isset($base[$key]) && is_array($base[$key])) {
+                $base[$key] = array_replace($base[$key], $value);
+            } else {
+                $base[$key] = $value;
+            }
+        }
+
+        return $base;
     }
 
     /**
@@ -117,7 +146,7 @@ class Config
      */
     public function save(array $data): void
     {
-        $this->data = array_replace_recursive($this->data, $data);
+        $this->data = $this->mergeSections($this->data, $data);
         $this->persist($this->data);
     }
 

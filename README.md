@@ -34,10 +34,10 @@ services:
 1. Set `WEBUI_PASSWORD` to something real — **the container refuses to
    start without it.**
 2. `docker compose up -d`
-3. Open `http://<host>:8070` — your browser will prompt for the
-   `WEBUI_USERNAME`/`WEBUI_PASSWORD` you set above (HTTP Basic Auth). Fill in
-   the settings form: Seerr / Radarr / Sonarr / Bazarr URLs + API keys, your
-   main languages, and any optional keyword shortcuts.
+3. Open `http://<host>:8070` — you'll land on a login page; sign in with the
+   `WEBUI_USERNAME`/`WEBUI_PASSWORD` you set above. Fill in the settings
+   form: Seerr / Radarr / Sonarr / Bazarr URLs + API keys, your main
+   languages, and any optional keyword shortcuts.
 4. Copy the generated **Webhook URL** and **Webhook secret** from the bottom
    of the settings page into Seerr → Settings → Notifications → Webhook:
    - **Webhook URL:** as shown.
@@ -53,15 +53,15 @@ services:
 | `PGID` | Group id to run as inside the container | `1000` |
 | `TZ` | Timezone | `UTC` |
 | `PORT` | Port the web server listens on | `8070` |
-| `WEBUI_PASSWORD` | **Required.** Password for the settings UI (HTTP Basic Auth) — the container will not start without it. | *(none)* |
-| `WEBUI_USERNAME` | Username for the settings UI | `admin` |
+| `WEBUI_PASSWORD` | **Required.** Password for the settings UI login form — the container will not start without it. | *(none)* |
+| `WEBUI_USERNAME` | Username for the settings UI login form | `admin` |
 
 The settings UI holds every configured service's API key and the webhook
-secret in plaintext, so it's gated behind HTTP Basic Auth rather than left
-open on the network. This only protects the settings pages — the `/webhook`
-endpoint Seerr calls has its own independent secret-based auth (the
-Authorization header you copy into Seerr's webhook config), and `/healthz`
-stays open for the container's health check.
+secret in plaintext, so it's gated behind a login form (session cookie +
+CSRF-protected) rather than left open on the network. This only protects the
+settings pages — the `/webhook` endpoint Seerr calls has its own independent
+secret-based auth (the Authorization header you copy into Seerr's webhook
+config), and `/healthz` stays open for the container's health check.
 
 All *application* configuration (service URLs/API keys, language and sync
 keywords, auto-translate interop) lives in the web UI and is persisted to
@@ -74,10 +74,13 @@ variables or docker-compose, unlike some other *arr-style tools.
   has no explicit "all episodes" marker — the granularity is implicit in
   which fields the webhook payload includes).
 - **Language detection** from the reporter's comment via optional keyword
-  shortcuts, falling back to your configured main-languages list when the
-  comment doesn't say anything specific.
+  shortcuts, falling back to your configured main-languages list (reorderable
+  in the UI) when the comment doesn't say anything specific. Language codes
+  are whatever Bazarr itself uses — check Bazarr's Settings → Languages page
+  for the exact codes your profiles are configured with.
 - **Sync vs. replace**: a comment like "out of sync" realigns the existing
-  file to audio instead of blacklisting and re-downloading it.
+  file to audio instead of blacklisting and re-downloading it — a handful of
+  common phrasings are pre-filled for you, editable in the UI.
 - **External auto-translate tool interop**: detects when a subtitle on disk
   was written by an external tool (like Bazarr-AI-Translate or
   ai-subtitle-translator) rather than Bazarr itself, and resets it —
