@@ -6,6 +6,15 @@ PGID="${PGID:-1000}"
 PORT="${PORT:-8089}"
 TZ="${TZ:-UTC}"
 
+# The settings UI exposes every configured service's API key plus the
+# webhook secret, so it must never be reachable unauthenticated — refuse to
+# boot rather than fall back to some baked-in default password.
+if [ -z "${WEBUI_PASSWORD}" ]; then
+    echo "ERROR: WEBUI_PASSWORD is not set." >&2
+    echo "Set it in your docker-compose.yml / docker run command (and WEBUI_USERNAME, optional, defaults to 'admin') before starting this container." >&2
+    exit 1
+fi
+
 # Timezone
 if [ -f "/usr/share/zoneinfo/${TZ}" ]; then
     cp "/usr/share/zoneinfo/${TZ}" /etc/localtime

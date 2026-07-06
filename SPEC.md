@@ -67,6 +67,8 @@ services:
       - PGID=1000
       - TZ=Europe/Copenhagen
       - PORT=8089
+      - WEBUI_USERNAME=admin
+      - WEBUI_PASSWORD=changeme # required — see §4.2
     volumes:
       - ./config:/config
     ports:
@@ -76,7 +78,9 @@ services:
 
 - **Base image:** `php:8.3-cli-alpine` + `curl`, `tzdata`, `shadow`, `su-exec`.
 - **Entrypoint script** (`entrypoint.sh`) does the linuxserver.io-style dance:
-  1. Read `PUID`/`PGID`/`PORT`/`TZ` env vars (sensible defaults if unset).
+  1. Read `PUID`/`PGID`/`PORT`/`TZ`/`WEBUI_PASSWORD`/`WEBUI_USERNAME` env
+     vars (sensible defaults for all but `WEBUI_PASSWORD`, which has none —
+     **refuse to start** if it's unset/empty; see §4.2).
   2. Create/modify a system user+group matching `PUID`/`PGID`.
   3. `chown -R` the `/config` volume so the app can write to it.
   4. `exec su-exec appuser php -S 0.0.0.0:$PORT -t /app/public /app/public/index.php`
@@ -94,11 +98,15 @@ services:
 ## 4. Web UI (the "settings page" every *arr app has)
 
 **Every setting lives in the web UI — nothing requires editing `config.json` by
-hand or passing extra environment variables.** `PUID`/`PGID`/`TZ`/`PORT` are the
-only things that stay as env vars, because they're container-level concerns
-(user/permissions/timezone/port binding), decided at `docker run` time before
-the app even starts — same split Radarr/Sonarr/Bazarr use. Everything the app
-itself needs is editable at `/`, POSTing to `/save`, persisted via `Config::save()`.
+hand or passing extra environment variables.** `PUID`/`PGID`/`TZ`/`PORT` are
+container-level concerns (user/permissions/timezone/port binding), decided at
+`docker run` time before the app even starts — same split Radarr/Sonarr/Bazarr
+use. `WEBUI_USERNAME`/`WEBUI_PASSWORD` join that list for the same reason:
+the settings UI itself exposes every configured service's API key and the
+webhook secret, so *access to the UI* has to be decided before the app is
+reachable at all, not configured from inside a page that's the very thing
+being protected — see §4.2. Everything else the app needs is editable at `/`,
+POSTing to `/save`, persisted via `Config::save()`.
 
 | Field | Purpose |
 |---|---|
@@ -136,6 +144,37 @@ language* and *what kind of problem* — so they're resolved by two separate
 classes rather than one, see §7's `LanguageResolver` and `ActionResolver`.
 
 See §7 for exactly how these lists get used together.
+
+### 4.2 Web UI authentication
+
+The settings UI is the one page in this app that's actually dangerous to
+leave open on a network: it shows (and lets you resave) the Seerr/Radarr/
+Sonarr/Bazarr API keys and the webhook secret. Rather than a login form with
+its own stored credentials — which would itself need to live somewhere
+before the app can enforce it — this is **HTTP Basic Auth backed directly by
+two env vars**:
+
+- `WEBUI_PASSWORD` — **required, no default.** `entrypoint.sh` checks this
+  before doing anything else and `exit 1`s with a clear message if it's
+  unset/empty, so the container simply never comes up unauthenticated.
+- `WEBUI_USERNAME` — optional, defaults to `admin`.
+
+`Support\BasicAuthGuard::verify()` reads `$_SERVER['PHP_AUTH_USER']`/
+`PHP_AUTH_PW'` (populated automatically by PHP's built-in `cli-server` SAPI
+for Basic Auth — no manual header parsing needed) and compares both against
+the env vars via `hash_equals()`. `public/index.php` calls it for `/` and
+`/save` only:
+
+- **`/webhook` is untouched** — Seerr authenticates to it with its own
+  independent secret (§5), checked separately in `WebhookController`, not
+  with a username/password.
+- **`/healthz` is untouched** — needs to stay reachable for the Dockerfile's
+  `HEALTHCHECK` without credentials.
+
+If `WEBUI_PASSWORD` is somehow empty at request time (e.g. running
+`public/index.php` directly with `php -S` outside the container, without
+setting the env var) `BasicAuthGuard` fails closed — every request to `/`
+or `/save` gets a 401, rather than silently allowing access.
 
 ---
 
@@ -238,7 +277,8 @@ seerr-syncerr/
 │   │   ├── HttpClient.php    # thin cURL wrapper (GET/POST/PUT + JSON)
 │   │   ├── LanguageResolver.php  # comment -> [language codes] to fix, see §4.1/§7
 │   │   ├── ActionResolver.php    # comment -> "sync" or "replace", see §4.1/§7.1
-│   │   └── ExternalTranslationDetector.php  # was this file translated outside Bazarr?
+│   │   ├── ExternalTranslationDetector.php  # was this file translated outside Bazarr?
+│   │   └── BasicAuthGuard.php    # HTTP Basic Auth for the settings UI, see §4.2
 │   ├── TranslatorAdapters/
 │   │   ├── ExternalTranslatorAdapter.php    # interface: isCallable()/triggerRetranslate(), see §8
 │   │   ├── BazarrAiTranslateAdapter.php
@@ -583,19 +623,25 @@ entry — pull a published image, no local build step:
 ```yaml
 services:
   seerr-syncerr:
-    image: ghcr.io/<your-github-username>/seerr-syncerr:latest
+    image: ghcr.io/bymem/seerr-syncerr:latest
     container_name: seerr-syncerr
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=Europe/Copenhagen
-      - PORT=8089
+      - PORT=8070
+      - WEBUI_USERNAME=admin
+      - WEBUI_PASSWORD=changeme # required — see §4.2
     volumes:
       - ./config:/config
     ports:
-      - "8089:8089"
+      - "8070:8070"
     restart: unless-stopped
 ```
+
+**Live as of 2026-07-06:** `ghcr.io/bymem/seerr-syncerr:latest` (amd64+arm64)
+— first GitHub Actions run succeeded and the package pulls anonymously
+(confirmed via a token-scoped manifest fetch), so visibility is already public.
 
 ### Where the image lives
 

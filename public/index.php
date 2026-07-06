@@ -24,6 +24,7 @@ spl_autoload_register(function (string $class): void {
 use SeerrSyncerr\Config;
 use SeerrSyncerr\Controllers\SettingsController;
 use SeerrSyncerr\Controllers\WebhookController;
+use SeerrSyncerr\Support\BasicAuthGuard;
 use SeerrSyncerr\Support\Logger;
 
 $configPath = getenv('CONFIG_PATH') ?: '/config/config.json';
@@ -41,6 +42,16 @@ if ($path === '/healthz') {
 
 if ($path === '/webhook' && $method === 'POST') {
     (new WebhookController($config, $logger))->handle();
+    return;
+}
+
+// The settings UI exposes every configured service's API key and the
+// webhook secret, so it's gated behind HTTP Basic Auth — the webhook route
+// above has its own secret-based auth and is unaffected.
+if (($path === '/' || $path === '/save') && !BasicAuthGuard::verify()) {
+    header('WWW-Authenticate: Basic realm="SeerrSyncerr"');
+    http_response_code(401);
+    echo 'Authentication required';
     return;
 }
 

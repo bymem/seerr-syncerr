@@ -7,6 +7,8 @@ services:
       - PGID=1000
       - TZ=Europe/Copenhagen
       - PORT=8070
+      - WEBUI_USERNAME=admin
+      - WEBUI_PASSWORD=changeme # required — container refuses to start without this, change it!
     volumes:
       - ./config:/config
     ports:

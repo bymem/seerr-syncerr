@@ -22,6 +22,8 @@ services:
       - PGID=1000
       - TZ=Europe/Copenhagen
       - PORT=8070
+      - WEBUI_USERNAME=admin
+      - WEBUI_PASSWORD=changeme # required — pick a real password
     volumes:
       - ./config:/config
     ports:
@@ -29,11 +31,14 @@ services:
     restart: unless-stopped
 ```
 
-1. `docker compose up -d`
-2. Open `http://<host>:8070` and fill in the settings form: Seerr / Radarr /
-   Sonarr / Bazarr URLs + API keys, your main languages, and any optional
-   keyword shortcuts.
-3. Copy the generated **Webhook URL** and **Webhook secret** from the bottom
+1. Set `WEBUI_PASSWORD` to something real — **the container refuses to
+   start without it.**
+2. `docker compose up -d`
+3. Open `http://<host>:8070` — your browser will prompt for the
+   `WEBUI_USERNAME`/`WEBUI_PASSWORD` you set above (HTTP Basic Auth). Fill in
+   the settings form: Seerr / Radarr / Sonarr / Bazarr URLs + API keys, your
+   main languages, and any optional keyword shortcuts.
+4. Copy the generated **Webhook URL** and **Webhook secret** from the bottom
    of the settings page into Seerr → Settings → Notifications → Webhook:
    - **Webhook URL:** as shown.
    - **Authorization Header:** the secret as shown.
@@ -48,6 +53,15 @@ services:
 | `PGID` | Group id to run as inside the container | `1000` |
 | `TZ` | Timezone | `UTC` |
 | `PORT` | Port the web server listens on | `8089` |
+| `WEBUI_PASSWORD` | **Required.** Password for the settings UI (HTTP Basic Auth) — the container will not start without it. | *(none)* |
+| `WEBUI_USERNAME` | Username for the settings UI | `admin` |
+
+The settings UI holds every configured service's API key and the webhook
+secret in plaintext, so it's gated behind HTTP Basic Auth rather than left
+open on the network. This only protects the settings pages — the `/webhook`
+endpoint Seerr calls has its own independent secret-based auth (the
+Authorization header you copy into Seerr's webhook config), and `/healthz`
+stays open for the container's health check.
 
 All *application* configuration (service URLs/API keys, language and sync
 keywords, auto-translate interop) lives in the web UI and is persisted to
@@ -78,5 +92,5 @@ See `SPEC.md` in this repo for the full design.
 No composer install needed — `src/` is autoloaded directly. Run locally with:
 
 ```bash
-CONFIG_PATH=./config/config.json php -S 0.0.0.0:8089 -t public public/index.php
+CONFIG_PATH=./config/config.json WEBUI_PASSWORD=dev php -S 0.0.0.0:8089 -t public public/index.php
 ```
