@@ -201,6 +201,29 @@ If `WEBUI_PASSWORD` is somehow empty at request time (e.g. running
 setting the env var), `SessionAuth::attempt()` fails closed — login can
 never succeed, rather than silently allowing access.
 
+### 4.3 Action Log tab
+
+`docker logs` is the only place any of this was visible before — fine for
+someone comfortable with the container, not for glancing at what happened
+after a report came in. The settings page and the log page now share a small
+tab bar (`Settings` / `Action Log`) so both live under the same login.
+
+- **`Support\Logger`** writes every `info()`/`warning()`/`error()` call to
+  stdout (unchanged, still picked up by `docker logs`) *and* appends the same
+  line to a capped file (`ACTIVITY_LOG_PATH`, defaults to
+  `/config/activity.log` — same non-user-facing default pattern as
+  `CONFIG_PATH`, not exposed as a docker-compose env var). Capped at 500
+  lines (oldest dropped first) — a debug aid, not an audit trail.
+- **`Controllers\LogsController`** reads the most recent entries
+  (`Logger::recentEntries()`, newest first) and renders `templates/logs.php`,
+  gated behind the same `SessionAuth::isLoggedIn()` check as `/` and `/save`.
+- **`Webhook\SubtitleIssueHandler`** now logs at each real decision point,
+  not just failures: receipt of a report (issue id + subject + comment text),
+  the resolved languages/action, one line per target/language outcome
+  (`info` if it reached a definite result, `warning` otherwise), and the
+  final resolve-vs-leave-open decision — enough to answer "what did it do
+  with that report" from the UI alone.
+
 ---
 
 ## 5. Seerr-side setup (what the user configures in Seerr itself)
@@ -298,7 +321,7 @@ seerr-syncerr/
 ├── src/
 │   ├── Config.php           # load/save config.json, dot-notation get()
 │   ├── Support/
-│   │   ├── Logger.php        # stdout logger for `docker logs`
+│   │   ├── Logger.php        # stdout logger + capped activity log file, see §4.3
 │   │   ├── HttpClient.php    # thin cURL wrapper (GET/POST/PUT + JSON)
 │   │   ├── LanguageResolver.php  # comment -> [language codes] to fix, see §4.1/§7
 │   │   ├── ActionResolver.php    # comment -> "sync" or "replace", see §4.1/§7.1
@@ -319,9 +342,11 @@ seerr-syncerr/
 │   │   └── SubtitleIssueHandler.php  # orchestrates the whole flow
 │   └── Controllers/
 │       ├── WebhookController.php     # POST /webhook
-│       └── SettingsController.php    # GET/POST / (web UI)
+│       ├── SettingsController.php    # GET/POST / (web UI)
+│       └── LogsController.php        # GET /logs (Action Log tab), see §4.3
 └── templates/
     ├── login.php             # login form, see §4.2
+    ├── logs.php               # Action Log tab, see §4.3
     └── settings.php          # plain PHP+HTML view, no framework
 ```
 

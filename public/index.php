@@ -22,6 +22,7 @@ spl_autoload_register(function (string $class): void {
 });
 
 use SeerrSyncerr\Config;
+use SeerrSyncerr\Controllers\LogsController;
 use SeerrSyncerr\Controllers\SettingsController;
 use SeerrSyncerr\Controllers\WebhookController;
 use SeerrSyncerr\Support\Logger;
@@ -70,7 +71,7 @@ if ($path === '/logout') {
 // The settings UI exposes every configured service's API key and the
 // webhook secret, so it's gated behind a login — the webhook route above
 // has its own independent secret-based auth and is unaffected.
-if (($path === '/' || $path === '/save') && !SessionAuth::isLoggedIn()) {
+if (($path === '/' || $path === '/save' || $path === '/logs') && !SessionAuth::isLoggedIn()) {
     header('Location: /login');
     return;
 }
@@ -87,6 +88,11 @@ if ($path === '/save' && $method === 'POST') {
         return;
     }
     (new SettingsController($config))->save($_POST);
+    return;
+}
+
+if ($path === '/logs' && $method === 'GET') {
+    (new LogsController($logger))->show();
     return;
 }
 

@@ -50,6 +50,10 @@ function ss_e($value): string
   .topbar { display: flex; justify-content: space-between; align-items: baseline; }
   .topbar a { color: #9ab; text-decoration: none; font-size: .9rem; }
   .topbar a:hover { text-decoration: underline; }
+  .tabs { display: flex; gap: .5rem; margin: 1rem 0 1.5rem; border-bottom: 1px solid #333; }
+  .tab { color: #9ab; text-decoration: none; padding: .5rem .9rem; border-bottom: 2px solid transparent; font-size: .95rem; }
+  .tab.active { color: #fff; border-bottom-color: #2a5c3a; }
+  .tab:hover { color: #fff; }
 </style>
 </head>
 <body>
@@ -58,6 +62,12 @@ function ss_e($value): string
   <h1>SeerrSyncerr</h1>
   <a href="/logout">Sign out</a>
 </div>
+
+<div class="tabs">
+  <a href="/" class="tab active">Settings</a>
+  <a href="/logs" class="tab">Action Log</a>
+</div>
+
 <p class="hint">Subtitle issue bridge for Seerr + Bazarr.</p>
 
 <?php if ($saved): ?>

@@ -69,10 +69,13 @@ class SubtitleIssueHandler
         $mediaType = $media['media_type'] ?? null;
         $message = (string) ($payload['message'] ?? '');
         $extra = $payload['extra'] ?? [];
+        $subject = (string) ($payload['subject'] ?? 'unknown title');
+
+        $this->logger->info("Issue #{$issueId} ({$subject}): received SUBTITLES report — \"{$message}\"");
 
         $targets = $this->resolveTargets($mediaType, $media, $extra);
         if ($targets === null || $targets === []) {
-            $this->logger->error("Could not resolve media for issue #{$issueId} to a Radarr/Sonarr id.");
+            $this->logger->error("Issue #{$issueId} ({$subject}): could not resolve media to a Radarr/Sonarr id.");
             $this->seerr->addComment(
                 $issueId,
                 'seerr-syncerr could not resolve this title to a Radarr/Sonarr id — check the Radarr/Sonarr connection in its settings.'
@@ -88,6 +91,10 @@ class SubtitleIssueHandler
 
         $action = $this->actionResolver->resolve($message, (array) $this->config->get('subtitles.sync_keywords', []));
 
+        $this->logger->info(
+            "Issue #{$issueId} ({$subject}): resolved languages=[" . implode(',', $languages) . "] action={$action}"
+        );
+
         $summaryLines = [];
         $allResolved = true;
 
@@ -95,7 +102,11 @@ class SubtitleIssueHandler
             foreach ($targets as $target) {
                 [$line, $resolved] = $this->processTarget($target, (string) $language, $action);
                 $summaryLines[] = $line;
-                if (!$resolved) {
+
+                if ($resolved) {
+                    $this->logger->info("Issue #{$issueId} ({$subject}): {$line}");
+                } else {
+                    $this->logger->warning("Issue #{$issueId} ({$subject}): {$line}");
                     $allResolved = false;
                 }
             }
@@ -104,7 +115,10 @@ class SubtitleIssueHandler
         $this->seerr->addComment($issueId, implode("\n", $summaryLines));
 
         if ($allResolved) {
+            $this->logger->info("Issue #{$issueId} ({$subject}): all fixes reached a definite outcome, resolving issue.");
             $this->seerr->resolveIssue($issueId);
+        } else {
+            $this->logger->warning("Issue #{$issueId} ({$subject}): at least one fix didn't complete, leaving issue open.");
         }
     }
 

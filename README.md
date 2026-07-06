@@ -87,6 +87,10 @@ variables or docker-compose, unlike some other *arr-style tools.
   fetching a fresh source file and re-triggering translation where the tool
   supports it — instead of running the normal blacklist flow against a file
   Bazarr never downloaded.
+- **Action Log tab**: what each report actually triggered — resolved
+  languages/action, per-target outcome, and the final resolve/leave-open
+  decision — without needing `docker logs`. Capped at the last 500 entries;
+  it's a debug aid, not an audit trail.
 
 See `SPEC.md` in this repo for the full design.
 
