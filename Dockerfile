@@ -4,6 +4,12 @@ RUN apk add --no-cache curl tzdata shadow su-exec
 
 WORKDIR /app
 
+# Baked in at build time by the GitHub Actions workflow (git tag, or
+# main-<shortsha> for untagged builds) — a plain `docker build .` with no
+# --build-arg falls back to "dev" so local builds still work.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 COPY public/ /app/public/
 COPY src/ /app/src/
 COPY templates/ /app/templates/

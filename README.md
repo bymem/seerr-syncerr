@@ -91,6 +91,9 @@ variables or docker-compose, unlike some other *arr-style tools.
   languages/action, per-target outcome, and the final resolve/leave-open
   decision — without needing `docker logs`. Capped at the last 500 entries;
   it's a debug aid, not an audit trail.
+- **Version shown in the UI** (login page and both tabs), with a link to the
+  GitHub releases page — baked in at build time from the git tag (or
+  `main-<shortsha>` for an untagged build), not checked automatically.
 
 See `SPEC.md` in this repo for the full design.
 

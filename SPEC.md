@@ -765,12 +765,22 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
+      - name: Compute app version
+        id: version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=main-$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+          fi
       - uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
 ```
 
 ### Versioning
@@ -783,6 +793,19 @@ much of this project's correctness depends on external APIs (§7's Bazarr
 verify-notes, §5's Seerr payload verify-note) that may shift between your
 versions and your future self's memory of why something was built a certain
 way.
+
+**Version shown in the UI:** the `Compute app version` step above resolves
+to the git tag on a tagged release (e.g. `v1.2.0`), or `main-<shortsha>`
+(e.g. `main-a1b2c3d`) on an untagged push to `main` — passed as the
+`APP_VERSION` build arg into the Dockerfile (`ARG APP_VERSION=dev` /
+`ENV APP_VERSION=$APP_VERSION`, `dev` being the fallback for a plain local
+`docker build .` with no build arg). Every page (login, settings, Action
+Log) reads `getenv('APP_VERSION')` and shows it next to the app name, with a
+link to the GitHub releases page — deliberately just *shown*, not
+auto-checked against the latest release over the network. A self-hosted
+tool phoning home to check for updates is a design choice worth asking
+about, not a default to reach for quietly; comparing what's displayed
+against the releases page is a one-click manual check instead.
 
 ### README, mirroring how *arr apps document themselves
 
