@@ -462,22 +462,30 @@ from Bazarr's own UI (2026-07-06) — not just guessed from issue trackers:
   `bazarr/utils.py`. You cannot blacklist "the Danish subtitle for movie X";
   only "this exact release from this exact provider."
 - `blacklistAndResearchMovie(int $radarrId, string $provider, string $subsId, string $subtitlePath, string $language): bool`
-  — **both halves now confirmed live.** Blacklist: `POST /api/movies/blacklist?radarrid=`,
+  — Blacklist: `POST /api/movies/blacklist?radarrid=`,
   `multipart/form-data` body: `provider`, `subs_id`, `subtitles_path`,
   `language` (all four required — the path is sent alongside the
-  provider+subs_id identifiers, not used as a substitute for them). Research:
-  `POST /api/movies` with `action=search-missing` + `radarrid` (multipart,
-  same as sync). One real behavioral difference worth knowing: search-missing
-  searches for **every currently-missing language on that movie's profile**,
-  not just the one language we're trying to fix — a side effect of using
-  Bazarr's own "search missing" action rather than a hypothetical
-  single-language-only endpoint.
+  provider+subs_id identifiers, not used as a substitute for them) —
+  **confirmed live**, still working against a real instance as of 2026-07-08.
+  Research: `POST /api/movies?action=search-missing`, `radarrid` in the
+  multipart body. **Correction (2026-07-08):** this spec previously said
+  `action` went in the multipart body alongside `radarrid` — that was wrong
+  and returned a live `500` (`{"message": "Internal Server Error"}`) the
+  first time this code path actually ran against a real Bazarr instance.
+  `action` belongs in the query string, exactly matching `syncMovieSubtitle`'s
+  confirmed `?action=sync` shape below — the original "(multipart, same as
+  sync)" note described the right endpoint but the implementation didn't
+  actually follow it. One real behavioral difference worth knowing:
+  search-missing searches for **every currently-missing language on that
+  movie's profile**, not just the one language we're trying to fix — a side
+  effect of using Bazarr's own "search missing" action rather than a
+  hypothetical single-language-only endpoint.
 - `blacklistAndResearchEpisode(int $seriesId, int $episodeId, string $provider, string $subsId, string $subtitlePath, string $language): bool`
-  — same two-call pattern, almost certainly `POST /api/episodes/blacklist`
-  and `POST /api/episodes` with `action=search-missing` + `sonarrEpisodeId`,
-  mirroring the movie routes exactly — unconfirmed, but low-risk given how
-  consistently movies/episodes have mirrored each other everywhere else
-  confirmed so far.
+  — same two-call pattern, `POST /api/episodes/blacklist` and
+  `POST /api/episodes?action=search-missing` with `seriesid`/`episodeid` in
+  the body — mirroring the movie routes, including the 2026-07-08 `action`
+  placement correction above (not yet independently confirmed live for the
+  episode path specifically, but almost certainly the same fix applies).
 - `syncMovieSubtitle(int $radarrId, string $subtitlePath, string $language, bool $hi = false, bool $forced = false): bool`
   — **confirmed live**: `POST /api/subtitles?action=sync`, `multipart/form-data`
   body (see `Support\HttpClient::postMultipart()`), fields:
@@ -836,12 +844,17 @@ against the releases page is a one-click manual check instead.
       `episodes.py`) **and** three live-captured requests from Bazarr's own
       UI (2026-07-06): list endpoints use `radarrid[]`/`seriesid[]`/`episodeid[]`
       bracket-array params; sync is `POST /api/subtitles?action=sync`;
-      search-missing is `POST /api/movies` with `action=search-missing` +
+      search-missing is `POST /api/movies?action=search-missing` +
       `radarrid`; blacklist is `POST /api/movies/blacklist?radarrid=` with
       `provider`/`subs_id`/`subtitles_path`/`language` — all `multipart/form-data`
-      (see §7's `BazarrClient`). One item left, deliberately deferred rather
-      than guessed: the episode-side routes are assumed to mirror movies
-      exactly (`/api/episodes/blacklist`, `action=search-missing` on
+      (see §7's `BazarrClient`). **2026-07-08 correction:** the
+      search-missing implementation had `action` in the multipart body
+      instead of the query string despite this line saying `?action=` —
+      that mismatch between spec and code caused a real live `500` the first
+      time it actually ran; fixed in `BazarrClient::researchMovie()`, see §7.
+      One item left, deliberately deferred rather than guessed: the
+      episode-side routes are assumed to mirror movies exactly
+      (`/api/episodes/blacklist`, `action=search-missing` on
       `/api/episodes`) but haven't been captured live — worth a quick check
       once episode handling is actually being tested, low risk given how
       consistently movies/episodes have mirrored each other everywhere else

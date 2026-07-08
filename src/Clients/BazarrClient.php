@@ -134,13 +134,18 @@ class BazarrClient
      * when a report says "missing subtitles" and there's nothing on record
      * to blacklist in the first place (the exact example payload in
      * SPEC.md §5).
+     *
+     * `action` goes in the query string, not the multipart body — same
+     * placement as sync()'s `?action=sync` below. A live 500 from Bazarr
+     * (2026-07-08) showed the previous version, which put `action` in the
+     * body alongside `radarrid`, was wrong despite SPEC.md's "(multipart,
+     * same as sync)" note — this wasn't actually matching sync's shape.
      */
     public function researchMovie(int $radarrId): bool
     {
         $research = $this->http->postMultipart('/api/movies', [
             'radarrid' => $radarrId,
-            'action' => 'search-missing',
-        ]);
+        ], ['action' => 'search-missing']);
 
         return $research['status'] >= 200 && $research['status'] < 300;
     }
@@ -150,8 +155,7 @@ class BazarrClient
         $research = $this->http->postMultipart('/api/episodes', [
             'seriesid' => $seriesId,
             'episodeid' => $episodeId,
-            'action' => 'search-missing',
-        ]);
+        ], ['action' => 'search-missing']);
 
         return $research['status'] >= 200 && $research['status'] < 300;
     }
