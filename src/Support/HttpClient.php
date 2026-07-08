@@ -51,6 +51,19 @@ class HttpClient
         return $this->execute('POST', $url, $formFields, false);
     }
 
+    /**
+     * Bazarr's actual "run an action" endpoints (/api/movies, /api/subtitles,
+     * /api/episodes/subtitles) are PATCH, not POST — confirmed against
+     * Bazarr's real source (flask_restx resources only define patch(), no
+     * post(), for these routes) after a live 500 showed the POST-based
+     * version was hitting the wrong handler entirely.
+     */
+    public function patchMultipart(string $path, array $formFields, array $query = []): array
+    {
+        $url = $this->buildUrl($path, $query);
+        return $this->execute('PATCH', $url, $formFields, false);
+    }
+
     private function buildUrl(string $path, array $query): string
     {
         $url = $this->baseUrl . '/' . ltrim($path, '/');

@@ -322,7 +322,7 @@ seerr-syncerr/
 │   ├── Config.php           # load/save config.json, dot-notation get()
 │   ├── Support/
 │   │   ├── Logger.php        # stdout logger + capped activity log file, see §4.3
-│   │   ├── HttpClient.php    # thin cURL wrapper (GET/POST/PUT + JSON)
+│   │   ├── HttpClient.php    # thin cURL wrapper (GET/POST/PUT/PATCH + JSON/multipart)
 │   │   ├── LanguageResolver.php  # comment -> [language codes] to fix, see §4.1/§7
 │   │   ├── ActionResolver.php    # comment -> "sync" or "replace", see §4.1/§7.1
 │   │   ├── ExternalTranslationDetector.php  # was this file translated outside Bazarr?
@@ -406,13 +406,19 @@ seerr-syncerr/
 - `post(string $path, array $body = []): array{status:int, body:?array}` —
   JSON body, used for Seerr/Radarr/Sonarr
 - `postMultipart(string $path, array $formFields, array $query = []): array{status:int, body:?array}`
-  — **new**, needed specifically for Bazarr: confirmed (§7 `BazarrClient`)
-  that its subtitle-action endpoint expects `multipart/form-data`, not JSON,
+  — needed specifically for Bazarr: confirmed (§7 `BazarrClient`)
+  that its blacklist endpoints expect `multipart/form-data`, not JSON,
   unlike every other API this project talks to. `CURLOPT_POSTFIELDS` with a
   plain array (not `json_encode`'d) makes cURL send it as multipart
   automatically — small implementation detail, but worth a code comment
   explaining *why* this one method exists, since it'd otherwise look like
   redundant duplication of `post()`.
+- `patchMultipart(string $path, array $formFields, array $query = []): array{status:int, body:?array}`
+  — same as `postMultipart()` but issues `PATCH`. **Added 2026-07-08**: every
+  Bazarr "run an action" endpoint (sync, search-missing) turned out to
+  actually be `PATCH`, not `POST` — confirmed by reading Bazarr's real
+  source after a live 500 exposed the wrong-method version. See §7's
+  `BazarrClient` for the full correction.
 - `put(string $path, array $body = []): array{status:int, body:?array}`
 
 ### `Clients\SeerrClient`
@@ -442,70 +448,91 @@ seerr-syncerr/
 
 ### `Clients\BazarrClient`
 
-Confirmed against Bazarr's actual source (`morpheus65535/bazarr`, `bazarr/api/`)
-and, for the subtitle-action endpoint specifically, a **live-captured request**
-from Bazarr's own UI (2026-07-06) — not just guessed from issue trackers:
+**Rewritten 2026-07-08 against Bazarr's actual source** (fetched live from
+`morpheus65535/bazarr` on GitHub — `bazarr/api/movies/*.py`,
+`bazarr/api/episodes/*.py`, `bazarr/api/subtitles/subtitles.py`), after a
+real production 500 showed the prior "confirmed live" claims for the
+action-style endpoints were wrong. The earlier notes were apparently based
+on a misremembered or different-version capture — this pass reads the
+actual `flask_restx` `Resource` classes and their `reqparse.RequestParser`
+argument lists directly, which is a stronger source than a UI capture:
 
 - `findMovieByRadarrId(int $radarrId): ?array` — `GET /api/movies?radarrid[]=`
-  (confirmed bracket-array query param style from `api/episodes/episodes.py`;
-  movies almost certainly mirrors it with `radarrid[]`)
+  — confirmed (`api/movies/movies.py`, `Movies.get()`).
 - `findEpisodeBySonarrIds(int $seriesId, int $episodeId): ?array` —
-  `GET /api/episodes?seriesid[]=&episodeid[]=` (confirmed exact param names)
+  `GET /api/episodes?seriesid[]=&episodeid[]=` — confirmed
+  (`api/episodes/episodes.py`, `Episodes.get()`).
 - `findCurrentSubtitleRelease(int $mediaId, string $language, bool $isEpisode): ?array`
-  — **new, required step** before blacklisting: queries
-  `/api/movies/history` or `/api/episodes/history` for the most recent
-  matching-language download and returns its `provider` + `subs_id`, plus
-  the subtitle's on-disk `path` (needed below). This is
-  necessary because Bazarr's blacklist table is keyed by **provider + subs_id**
-  (a specific release), not by movie/language — confirmed from
+  — queries `GET /api/movies/history?radarrid=` or
+  `GET /api/episodes/history?episodeid=` (plain int, not bracket-array —
+  confirmed, `MoviesHistory.get()`) for the most recent matching-language
+  download, returning `provider` + `subs_id` + on-disk `path`. Necessary
+  because Bazarr's blacklist table is keyed by **provider + subs_id** (a
+  specific release), not by movie/language — confirmed from
   `table_blacklist`'s schema and `blacklist_delete(provider, subs_id)` in
   `bazarr/utils.py`. You cannot blacklist "the Danish subtitle for movie X";
   only "this exact release from this exact provider."
-- `blacklistAndResearchMovie(int $radarrId, string $provider, string $subsId, string $subtitlePath, string $language): bool`
-  — Blacklist: `POST /api/movies/blacklist?radarrid=`,
-  `multipart/form-data` body: `provider`, `subs_id`, `subtitles_path`,
-  `language` (all four required — the path is sent alongside the
-  provider+subs_id identifiers, not used as a substitute for them) —
-  **confirmed live**, still working against a real instance as of 2026-07-08.
-  Research: `POST /api/movies?action=search-missing`, `radarrid` in the
-  multipart body. **Correction (2026-07-08):** this spec previously said
-  `action` went in the multipart body alongside `radarrid` — that was wrong
-  and returned a live `500` (`{"message": "Internal Server Error"}`) the
-  first time this code path actually ran against a real Bazarr instance.
-  `action` belongs in the query string, exactly matching `syncMovieSubtitle`'s
-  confirmed `?action=sync` shape below — the original "(multipart, same as
-  sync)" note described the right endpoint but the implementation didn't
-  actually follow it. One real behavioral difference worth knowing:
-  search-missing searches for **every currently-missing language on that
-  movie's profile**, not just the one language we're trying to fix — a side
-  effect of using Bazarr's own "search missing" action rather than a
-  hypothetical single-language-only endpoint.
-- `blacklistAndResearchEpisode(int $seriesId, int $episodeId, string $provider, string $subsId, string $subtitlePath, string $language): bool`
-  — same two-call pattern, `POST /api/episodes/blacklist` and
-  `POST /api/episodes?action=search-missing` with `seriesid`/`episodeid` in
-  the body — mirroring the movie routes, including the 2026-07-08 `action`
-  placement correction above (not yet independently confirmed live for the
-  episode path specifically, but almost certainly the same fix applies).
-- `syncMovieSubtitle(int $radarrId, string $subtitlePath, string $language, bool $hi = false, bool $forced = false): bool`
-  — **confirmed live**: `POST /api/subtitles?action=sync`, `multipart/form-data`
-  body (see `Support\HttpClient::postMultipart()`), fields:
-  `type` (`movie`/`episode`), `path` (the subtitle file's actual disk path —
-  from `findCurrentSubtitleRelease()`), `id` (radarr/sonarr id), `language`,
-  `forced`, `hi`, plus ffsubsync-tuning fields `reference`, `max_offset_seconds`,
-  `no_fix_framerate`, and **`gss`** (Golden Section Search — this directly
-  confirms overr-syncerr's old description of syncing "using the 1st audio
-  track + GSS"; same underlying mechanism). Realigns the existing file to
-  audio, no blacklist/re-download involved.
-- `syncEpisodeSubtitle(int $seriesId, int $episodeId, string $subtitlePath, string $language, bool $hi = false, bool $forced = false): bool`
-  — same endpoint, `type: episode`, `id` is the Sonarr episode id.
+- `blacklistAndResearchMovie(...)` / `blacklistAndResearchEpisode(...)` —
+  **`POST /api/movies/blacklist`** / **`POST /api/movies/blacklist`**
+  (genuinely `POST` — these resources *do* define `post()`), fields
+  `radarrid`/`provider`/`subs_id`/`subtitles_path`/`language` (episode
+  variant: `seriesid`+`episodeid` instead of `radarrid`) — confirmed still
+  working live as of 2026-07-08. **Correction:** Bazarr's blacklist `post()`
+  already calls `movies_download_subtitles()`/`episode_download_subtitles()`
+  itself once the delete succeeds — a separate research call after a
+  successful blacklist is pure redundant work, not extra resilience (the
+  code only ever reached it on the success path anyway). Removed.
+- `researchMovie(int $radarrId): bool` — **`PATCH /api/movies`**, fields
+  `radarrid`+`action=search-missing` — confirmed (`api/movies/movies.py`,
+  `Movies.patch()`, an action-dispatch handler with no separate `post()`
+  logic for this). **Correction:** this was `POST` until 2026-07-08, which
+  actually hit `Movies.post()` — a completely different, unrelated handler
+  ("update movie's language profile") that crashed with a real live `500`
+  the first time this path was exercised, since our request didn't match
+  what that handler expects. Searches every currently-missing language on
+  the movie's profile, not just the one being fixed — accepted, since movies
+  have no single-language equivalent (episodes do, see below).
+- `researchEpisode(int $seriesId, int $episodeId, string $language): bool`
+  — **`PATCH /api/episodes/subtitles`**, fields
+  `seriesid`+`episodeid`+`language`+`forced`+`hi`. **Correction:** SPEC.md
+  previously assumed a bulk `POST /api/episodes?action=search-missing`
+  mirroring the movie route — that route doesn't exist at all
+  (`api/episodes/episodes.py`'s `Episodes` resource only defines `get()`).
+  The real equivalent is `EpisodesSubtitles.patch()` (`api/episodes/
+  episodes_subtitles.py`), which downloads one *specific* language rather
+  than "everything missing" — arguably a better fit for this app's use case
+  than the movie route's blanket search, not just a workaround.
+- `syncMovieSubtitle(...)` / `syncEpisodeSubtitle(...)` — **`PATCH
+  /api/subtitles`**, fields `action=sync`, `type` (`movie`/`episode`),
+  `path`, `id`, `language`, `forced`, `hi`, `gss` (Golden Section Search —
+  confirms overr-syncerr's old "using the 1st audio track + GSS"
+  description) — confirmed (`api/subtitles/subtitles.py`, `Subtitles.patch()`,
+  `action == 'sync'` branch calling `sync_subtitles()`). **Correction:**
+  this was `POST` until 2026-07-08 — that resource has **no `post()` at all**,
+  so every prior call here would have failed outright; it just hadn't been
+  exercised yet in testing (only reached when a report's comment matches a
+  sync keyword). Also: Bazarr compares `hi`/`forced`/`gss` with an
+  **exact-case `== 'True'`**, no normalization — the previous lowercase
+  `'true'`/`'false'` silently evaluated to `False` every time regardless of
+  what was actually requested. Now sent capitalized (`'True'`/`'False'`).
+  `reference`/`max_offset_seconds`/`no_fix_framerate` are left unset
+  (all optional in `reqparse`) — Bazarr falls back to the video file itself
+  as the sync reference when `reference` is omitted, which is exactly the
+  "1st audio track" behavior this app wants.
+- All of the above use `Support\HttpClient::patchMultipart()`
+  (new — mirrors `postMultipart()` but issues `PATCH`) rather than
+  `postMultipart()`, now that the HTTP verb itself is confirmed to matter:
+  Bazarr's `flask_restx` resources dispatch strictly by verb, and a request
+  arriving with the wrong one either 405s or — worse, as `researchMovie`'s
+  live 500 showed — silently lands on a *different* handler that happens to
+  share the same route.
 
 > ⚠️ **One unknown left:** which numeric history `action` code means
 > "downloaded via search" (only confirmed so far: `action == 4` means
 > "manually uploaded," from a real traceback in
 > `bazarr/api/movies/movies_subtitles.py` line 143). Needed for
 > `findCurrentSubtitleRelease()` to correctly identify a real automatic
-> download vs. any other history event type. The episode-level blacklist/
-> search-missing routes are also unconfirmed but low-risk (see above). Also
+> download vs. any other history event type. Also
 > worth a quick look, unrelated to any of this: `bazarr/utils.py` has an
 > internal `translate_subtitles_file` function — meaning Bazarr does have
 > *some* manual, on-demand translate capability internally, even though the
@@ -839,27 +866,21 @@ against the releases page is a one-click manual check instead.
 
 - [x] ~~Confirm Seerr's actual webhook payload shape~~ — confirmed 2026-07-06
       against real reports (movie, series, season, episode); see §5.
-- [x] ~~Confirm Bazarr's API routes~~ — **confirmed for movies**, via real
-      source (`bazarr/api/movies/movies_subtitles.py`, `episodes_subtitles.py`,
-      `episodes.py`) **and** three live-captured requests from Bazarr's own
-      UI (2026-07-06): list endpoints use `radarrid[]`/`seriesid[]`/`episodeid[]`
-      bracket-array params; sync is `POST /api/subtitles?action=sync`;
-      search-missing is `POST /api/movies?action=search-missing` +
-      `radarrid`; blacklist is `POST /api/movies/blacklist?radarrid=` with
-      `provider`/`subs_id`/`subtitles_path`/`language` — all `multipart/form-data`
-      (see §7's `BazarrClient`). **2026-07-08 correction:** the
-      search-missing implementation had `action` in the multipart body
-      instead of the query string despite this line saying `?action=` —
-      that mismatch between spec and code caused a real live `500` the first
-      time it actually ran; fixed in `BazarrClient::researchMovie()`, see §7.
-      One item left, deliberately deferred rather than guessed: the
-      episode-side routes are assumed to mirror movies exactly
-      (`/api/episodes/blacklist`, `action=search-missing` on
-      `/api/episodes`) but haven't been captured live — worth a quick check
-      once episode handling is actually being tested, low risk given how
-      consistently movies/episodes have mirrored each other everywhere else
-      confirmed so far. Also still open: which numeric history `action` code
-      means "downloaded via search" (only confirmed `4` = manual upload).
+- [x] ~~Confirm Bazarr's API routes~~ — **re-confirmed 2026-07-08** by
+      reading Bazarr's real source directly (`bazarr/api/movies/*.py`,
+      `bazarr/api/episodes/*.py`, `bazarr/api/subtitles/subtitles.py`) after
+      a live 500 in production showed the prior "confirmed live" entry here
+      (based on a 2026-07-06 UI capture) was wrong about HTTP methods: list
+      endpoints use `radarrid[]`/`seriesid[]`/`episodeid[]` bracket-array
+      params (still correct); blacklist is genuinely `POST` (still correct);
+      but sync and search-missing are **`PATCH`, not `POST`** — those
+      `flask_restx` resources have no `post()` handler at all, or (for
+      movies' search-missing) `POST` silently lands on a *different*,
+      unrelated handler. Also: episodes have no bulk search-missing route,
+      only a targeted single-language one (`PATCH /api/episodes/subtitles`).
+      Full detail and the fix in §7's `BazarrClient`. Still open: which
+      numeric history `action` code means "downloaded via search" (only
+      confirmed `4` = manual upload).
 - [x] ~~Confirm Seerr's issue resolve endpoint~~ — confirmed 2026-07-06 live:
       `POST /api/v1/issue/{id}/resolved` exactly as assumed; see §7's
       `SeerrClient`.

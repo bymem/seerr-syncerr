@@ -81,6 +81,13 @@ class BazarrClient
         return null;
     }
 
+    /**
+     * Bazarr's blacklist POST handler already triggers a re-download itself
+     * once the delete succeeds (`movies_download_subtitles()` internally) —
+     * confirmed reading Bazarr's real source (api/movies/blacklist.py). No
+     * separate research() call needed/wanted after this succeeds; doing one
+     * anyway would just be a second, redundant provider search.
+     */
     public function blacklistAndResearchMovie(
         int $radarrId,
         string $provider,
@@ -89,23 +96,20 @@ class BazarrClient
         string $language
     ): bool {
         $blacklisted = $this->http->postMultipart('/api/movies/blacklist', [
+            'radarrid' => $radarrId,
             'provider' => $provider,
             'subs_id' => $subsId,
             'subtitles_path' => $subtitlePath,
             'language' => $language,
-        ], ['radarrid' => $radarrId]);
+        ]);
 
-        if ($blacklisted['status'] < 200 || $blacklisted['status'] >= 300) {
-            return false;
-        }
-
-        return $this->researchMovie($radarrId);
+        return $blacklisted['status'] >= 200 && $blacklisted['status'] < 300;
     }
 
     /**
-     * Mirrors blacklistAndResearchMovie(), unconfirmed live but low-risk
-     * given how consistently movies/episodes mirror each other elsewhere
-     * (SPEC.md §7/§11 open item).
+     * Mirrors blacklistAndResearchMovie() — confirmed against Bazarr's real
+     * source (api/episodes/blacklist.py), same "already triggers its own
+     * re-download" behavior.
      */
     public function blacklistAndResearchEpisode(
         int $seriesId,
@@ -116,17 +120,15 @@ class BazarrClient
         string $language
     ): bool {
         $blacklisted = $this->http->postMultipart('/api/episodes/blacklist', [
+            'seriesid' => $seriesId,
+            'episodeid' => $episodeId,
             'provider' => $provider,
             'subs_id' => $subsId,
             'subtitles_path' => $subtitlePath,
             'language' => $language,
-        ], ['seriesid' => $seriesId, 'episodeid' => $episodeId]);
+        ]);
 
-        if ($blacklisted['status'] < 200 || $blacklisted['status'] >= 300) {
-            return false;
-        }
-
-        return $this->researchEpisode($seriesId, $episodeId);
+        return $blacklisted['status'] >= 200 && $blacklisted['status'] < 300;
     }
 
     /**
@@ -135,27 +137,44 @@ class BazarrClient
      * to blacklist in the first place (the exact example payload in
      * SPEC.md §5).
      *
-     * `action` goes in the query string, not the multipart body — same
-     * placement as sync()'s `?action=sync` below. A live 500 from Bazarr
-     * (2026-07-08) showed the previous version, which put `action` in the
-     * body alongside `radarrid`, was wrong despite SPEC.md's "(multipart,
-     * same as sync)" note — this wasn't actually matching sync's shape.
+     * Confirmed against Bazarr's real source (api/movies/movies.py): this is
+     * `PATCH /api/movies` — not POST, which a live 500 exposed on 2026-07-08
+     * (POST on this resource hits an unrelated "update movie profile"
+     * handler and crashes on a missing field it assumes is present).
+     * `action` dispatches to `movies_download_subtitles(radarrid)`, which
+     * searches every currently-missing language on the movie's profile, not
+     * just the one we're trying to fix — accepted as-is since there's no
+     * single-language equivalent for movies the way there is for episodes
+     * (see researchEpisode() below).
      */
     public function researchMovie(int $radarrId): bool
     {
-        $research = $this->http->postMultipart('/api/movies', [
+        $research = $this->http->patchMultipart('/api/movies', [
             'radarrid' => $radarrId,
-        ], ['action' => 'search-missing']);
+            'action' => 'search-missing',
+        ]);
 
         return $research['status'] >= 200 && $research['status'] < 300;
     }
 
-    public function researchEpisode(int $seriesId, int $episodeId): bool
+    /**
+     * Unlike movies, there's no bulk "search everything missing" endpoint
+     * for a single episode (`/api/episodes` only defines GET) — confirmed
+     * against Bazarr's real source. The closest equivalent is the *targeted*
+     * single-language download endpoint episodes actually have
+     * (`PATCH /api/episodes/subtitles`), which is arguably a better fit
+     * anyway: it searches exactly the language being fixed instead of
+     * everything missing on the episode's profile.
+     */
+    public function researchEpisode(int $seriesId, int $episodeId, string $language): bool
     {
-        $research = $this->http->postMultipart('/api/episodes', [
+        $research = $this->http->patchMultipart('/api/episodes/subtitles', [
             'seriesid' => $seriesId,
             'episodeid' => $episodeId,
-        ], ['action' => 'search-missing']);
+            'language' => $language,
+            'forced' => 'False',
+            'hi' => 'False',
+        ]);
 
         return $research['status'] >= 200 && $research['status'] < 300;
     }
@@ -182,7 +201,13 @@ class BazarrClient
     }
 
     /**
-     * Confirmed live: POST /api/subtitles?action=sync, multipart/form-data.
+     * Confirmed against Bazarr's real source (api/subtitles/subtitles.py):
+     * `PATCH /api/subtitles`, not POST — that resource has no post() at all,
+     * so every prior call here would have 404/405'd (never actually
+     * exercised in testing yet, since it's only reached via a "sync"
+     * keyword match). `hi`/`forced`/`gss` are compared with an exact-case
+     * `== 'True'` in Bazarr's handler, no normalization — lowercase 'true'
+     * silently evaluates to False, so those must be sent capitalized.
      * Realigns the existing file to audio via ffsubsync (gss = Golden
      * Section Search) — no blacklist or re-download involved.
      */
@@ -194,15 +219,16 @@ class BazarrClient
         bool $hi,
         bool $forced
     ): bool {
-        $response = $this->http->postMultipart('/api/subtitles', [
+        $response = $this->http->patchMultipart('/api/subtitles', [
+            'action' => 'sync',
             'type' => $type,
             'path' => $subtitlePath,
             'id' => $id,
             'language' => $language,
-            'hi' => $hi ? 'true' : 'false',
-            'forced' => $forced ? 'true' : 'false',
-            'gss' => 'true',
-        ], ['action' => 'sync']);
+            'hi' => $hi ? 'True' : 'False',
+            'forced' => $forced ? 'True' : 'False',
+            'gss' => 'True',
+        ]);
 
         return $response['status'] >= 200 && $response['status'] < 300;
     }

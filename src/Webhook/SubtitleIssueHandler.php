@@ -239,7 +239,7 @@ class SubtitleIssueHandler
         // in SPEC.md §5) — just trigger a fresh search.
         if ($release === null || $release['provider'] === null || $release['subs_id'] === null) {
             $ok = $isEpisode
-                ? $this->bazarr->researchEpisode($target['seriesId'], $target['episodeId'])
+                ? $this->bazarr->researchEpisode($target['seriesId'], $target['episodeId'], $language)
                 : $this->bazarr->researchMovie($target['radarrId']);
 
             return $ok
@@ -291,7 +291,7 @@ class SubtitleIssueHandler
                 : $this->bazarr->blacklistAndResearchMovie($target['radarrId'], $sourceRelease['provider'], $sourceRelease['subs_id'], (string) $sourceRelease['path'], $sourceLanguage);
         } else {
             $isEpisode
-                ? $this->bazarr->researchEpisode($target['seriesId'], $target['episodeId'])
+                ? $this->bazarr->researchEpisode($target['seriesId'], $target['episodeId'], $sourceLanguage)
                 : $this->bazarr->researchMovie($target['radarrId']);
         }
 
