@@ -10,11 +10,13 @@ class HttpClient
 {
     private string $baseUrl;
     private array $headers;
+    private ?Logger $logger;
 
-    public function __construct(string $baseUrl, array $headers = [])
+    public function __construct(string $baseUrl, array $headers = [], ?Logger $logger = null)
     {
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->headers = $headers;
+        $this->logger = $logger;
     }
 
     public function get(string $path, array $query = []): array
@@ -83,11 +85,23 @@ class HttpClient
 
         $response = curl_exec($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = $response === false ? curl_error($ch) : null;
         curl_close($ch);
 
         $decoded = null;
         if ($response !== false && $response !== '') {
             $decoded = json_decode($response, true);
+        }
+
+        // Every non-2xx/cURL-level failure gets logged right here — this is
+        // the one chokepoint every API call (Seerr/Radarr/Sonarr/Bazarr)
+        // passes through, so callers don't each need their own diagnostic
+        // logging to explain *why* a request failed, not just that it did.
+        if ($this->logger !== null && ($curlError !== null || $status < 200 || $status >= 300)) {
+            $reason = $curlError !== null
+                ? "connection error: {$curlError}"
+                : 'status=' . $status . ($response !== false && $response !== '' ? ' body=' . substr((string) $response, 0, 300) : '');
+            $this->logger->warning("HTTP {$method} {$url} failed — {$reason}");
         }
 
         return ['status' => $status, 'body' => $decoded];

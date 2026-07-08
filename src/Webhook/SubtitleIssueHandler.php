@@ -38,10 +38,10 @@ class SubtitleIssueHandler
         $this->config = $config;
         $this->logger = $logger;
 
-        $this->seerr = new SeerrClient((string) $config->get('seerr.url', ''), (string) $config->get('seerr.api_key', ''));
-        $this->radarr = new RadarrClient((string) $config->get('radarr.url', ''), (string) $config->get('radarr.api_key', ''));
-        $this->sonarr = new SonarrClient((string) $config->get('sonarr.url', ''), (string) $config->get('sonarr.api_key', ''));
-        $this->bazarr = new BazarrClient((string) $config->get('bazarr.url', ''), (string) $config->get('bazarr.api_key', ''));
+        $this->seerr = new SeerrClient((string) $config->get('seerr.url', ''), (string) $config->get('seerr.api_key', ''), $logger);
+        $this->radarr = new RadarrClient((string) $config->get('radarr.url', ''), (string) $config->get('radarr.api_key', ''), $logger);
+        $this->sonarr = new SonarrClient((string) $config->get('sonarr.url', ''), (string) $config->get('sonarr.api_key', ''), $logger);
+        $this->bazarr = new BazarrClient((string) $config->get('bazarr.url', ''), (string) $config->get('bazarr.api_key', ''), $logger);
 
         $this->languageResolver = new LanguageResolver();
         $this->actionResolver = new ActionResolver();
@@ -318,8 +318,8 @@ class SubtitleIssueHandler
         return match ($this->config->get('translator.adapter', 'none')) {
             'bazarr_ai_translate' => new BazarrAiTranslateAdapter(),
             'bazarr_auto_translate' => new BazarrAutoTranslateAdapter(),
-            'ai_subtitle_translator' => new AiSubtitleTranslatorAdapter($toolUrl),
-            'custom' => new CustomAdapter((bool) $this->config->get('translator.custom_callable', false), $toolUrl),
+            'ai_subtitle_translator' => new AiSubtitleTranslatorAdapter($toolUrl, $this->logger),
+            'custom' => new CustomAdapter((bool) $this->config->get('translator.custom_callable', false), $toolUrl, $this->logger),
             default => new class implements ExternalTranslatorAdapter {
                 public function isCallable(): bool
                 {

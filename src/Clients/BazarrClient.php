@@ -3,6 +3,7 @@
 namespace SeerrSyncerr\Clients;
 
 use SeerrSyncerr\Support\HttpClient;
+use SeerrSyncerr\Support\Logger;
 
 /**
  * Confirmed against Bazarr's own source (morpheus65535/bazarr, bazarr/api/)
@@ -16,11 +17,11 @@ class BazarrClient
 
     private HttpClient $http;
 
-    public function __construct(string $baseUrl, string $apiKey)
+    public function __construct(string $baseUrl, string $apiKey, ?Logger $logger = null)
     {
         $this->http = new HttpClient($baseUrl, [
             'X-API-KEY: ' . $apiKey,
-        ]);
+        ], $logger);
     }
 
     public function findMovieByRadarrId(int $radarrId): ?array

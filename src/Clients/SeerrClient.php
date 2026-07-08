@@ -3,6 +3,7 @@
 namespace SeerrSyncerr\Clients;
 
 use SeerrSyncerr\Support\HttpClient;
+use SeerrSyncerr\Support\Logger;
 
 /**
  * Confirmed live 2026-07-06 (SPEC.md §7) against a real Seerr instance —
@@ -12,11 +13,11 @@ class SeerrClient
 {
     private HttpClient $http;
 
-    public function __construct(string $baseUrl, string $apiKey)
+    public function __construct(string $baseUrl, string $apiKey, ?Logger $logger = null)
     {
         $this->http = new HttpClient($baseUrl, [
             'X-Api-Key: ' . $apiKey,
-        ]);
+        ], $logger);
     }
 
     public function addComment(int $issueId, string $message): bool

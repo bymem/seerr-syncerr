@@ -44,6 +44,17 @@ class WebhookController
             return;
         }
 
+        // Logged here, before dispatch, so every authenticated webhook call
+        // is visible — including Seerr's "Test" button on the webhook
+        // settings page, which sends some notification_type other than
+        // ISSUE_CREATED and would otherwise be silently dropped by
+        // SubtitleIssueHandler with no trace anywhere in the Action Log.
+        $notificationType = (string) ($payload['notification_type'] ?? 'unknown');
+        $event = (string) ($payload['event'] ?? '');
+        $this->logger->info(
+            "Received webhook: notification_type={$notificationType}" . ($event !== '' ? " event=\"{$event}\"" : '')
+        );
+
         try {
             (new SubtitleIssueHandler($this->config, $this->logger))->handle($payload);
         } catch (\Throwable $e) {

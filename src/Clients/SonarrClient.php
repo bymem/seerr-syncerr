@@ -3,16 +3,17 @@
 namespace SeerrSyncerr\Clients;
 
 use SeerrSyncerr\Support\HttpClient;
+use SeerrSyncerr\Support\Logger;
 
 class SonarrClient
 {
     private HttpClient $http;
 
-    public function __construct(string $baseUrl, string $apiKey)
+    public function __construct(string $baseUrl, string $apiKey, ?Logger $logger = null)
     {
         $this->http = new HttpClient($baseUrl, [
             'X-Api-Key: ' . $apiKey,
-        ]);
+        ], $logger);
     }
 
     public function findSeriesIdByTvdbId(int $tvdbId): ?int
